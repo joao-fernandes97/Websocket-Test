@@ -79,6 +79,9 @@ crashlytics-build.properties
 # TestRunner generated files
 InitTestScene*.unity*
 
+# TextMesh Pro files
+**/[Aa]ssets/TextMesh*Pro*
+
 # Addressables default ignores, before user customizations
 /ServerData
 /[Aa]ssets/StreamingAssets/aa*
