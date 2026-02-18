@@ -66,7 +66,7 @@
     "explorer.fileNesting.patterns": {
         "*.sln": "*.csproj"
     },
-    "dotnet.defaultSolution": "Websocket Test.sln",
+    "dotnet.defaultSolution": "Websocket Test.slnx",
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python-envs.pythonProjects": []
 }
