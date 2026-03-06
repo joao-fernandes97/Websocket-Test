@@ -96,36 +96,47 @@ def lsl_worker():
         log(f"StreamInlet() failed: {e}")
         return
 
+    # --- diagnostic: try a single blocking pull first ---
+    log("Waiting for first sample (blocking, 5s timeout)...")
+    sample, ts = inlet.pull_sample(timeout=5.0)
+    if sample is None:
+        log("ERROR: No sample received after 5s. Stream is not sending data.")
+        return
+    log(f"First sample received: ts={ts:.3f}  values={sample}")
+    
     log("Connected. Ingesting samples...")
     sample_count = 0
     last_report = time.monotonic()
-
+    
     try:
         while True:
             # pull_chunk is more efficient than pull_sample in a tight loop
             samples, timestamps = inlet.pull_chunk(timeout=1.0, max_samples=32)
-            if timestamps:
-                now = time.monotonic()
+            
+            now = time.monotonic()
+                
+            # Report every second regardless of whether data arrived
+            if now - last_report >= 1.0:
                 with buffer_lock:
-                    for ts, sample in zip(timestamps, samples):
-                        # Adjust the index to match your OpenSignals channel layout probably gonna need to let this be set in GUI?
-                        ecg_buffer.append((now, sample[0]))
+                    buf_len = len(ecg_buffer)
+                log(f"LSL tick — chunk_size={len(timestamps)}  "
+                    f"total_samples={sample_count}  buffer={buf_len}")
+                last_report = now
 
-                    # Discard samples older than the window we care about
-                    cutoff = now - MAX_BUFFER_SECONDS
-                    while ecg_buffer and ecg_buffer[0][0] < cutoff:
-                        ecg_buffer.popleft()
+            if not timestamps:
+                continue
+                
+            with buffer_lock:
+                for ts, sample in zip(timestamps, samples):
+                    # Adjust the index to match your OpenSignals channel layout probably gonna need to let this be set in GUI?
+                    ecg_buffer.append((now, sample[0]))
 
-                    sample_count += len(timestamps)
+                # Discard samples older than the window we care about
+                cutoff = now - MAX_BUFFER_SECONDS
+                while ecg_buffer and ecg_buffer[0][0] < cutoff:
+                    ecg_buffer.popleft()
 
-                    # Log throughput once per second so you can confirm data is flowing
-                    if now - last_report >= 1.0:
-                        with buffer_lock:
-                            buf_len = len(ecg_buffer)
-                        log(f"LSL: +{sample_count} samples  buffer={buf_len}  "
-                            f"last_val={samples[-1][0]:.4f}")
-                        sample_count = 0
-                        last_report = now
+                sample_count += len(timestamps)
 
     except Exception as e:
         print(f"LSL worker error: {e}")
