@@ -9,7 +9,9 @@ from tkinter import font as tkfont
 import neurokit2 as nk
 import numpy as np
 import uvicorn
+import collections
 from fastapi import FastAPI
+from pylsl import StreamInlet, resolve_stream
 
 # Close Console Window after startup
 if sys.platform == "win32":
@@ -36,47 +38,102 @@ app = FastAPI()
 SAMPLING_RATE = 250
 WINDOW_SECONDS = 5
 
-ecg_signal = nk.ecg_simulate(duration=120, sampling_rate=SAMPLING_RATE)
-signals, info = nk.ecg_process(ecg_signal, sampling_rate=SAMPLING_RATE)
+MAX_BUFFER_SECONDS = WINDOW_SECONDS + 2
+ecg_buffer = collections.deque()
+buffer_lock = threading.Lock()
 
-rpeaks = info["ECG_R_Peaks"]
-rpeak_times = rpeaks / SAMPLING_RATE
+#ecg_signal = nk.ecg_simulate(duration=120, sampling_rate=SAMPLING_RATE)
+#signals, info = nk.ecg_process(ecg_signal, sampling_rate=SAMPLING_RATE)
+
+#rpeaks = info["ECG_R_Peaks"]
+#rpeak_times = rpeaks / SAMPLING_RATE
 
 current_bpm = 0.0
-lock = threading.Lock()
+bpm_lock = threading.Lock()
 start_time = None          # set when server actually starts
 
+# ---------------------------------------------------------------------------
+# LSL ingestion thread — replaces ecg_simulate + static rpeaks
+# ---------------------------------------------------------------------------
+def lsl_worker():
+    print("Looking for an available OpenSignals stream...")
+    streams = resolve_stream("name", "OpenSignals")
+    inlet = StreamInlet(streams[0])
+    print("Stream found. Ingesting samples...")
 
+    try:
+        while True:
+            # pull_chunk is more efficient than pull_sample in a tight loop
+            samples, timestamps = inlet.pull_chunk(timeout=1.0, max_samples=32)
+            if timestamps:
+                now = time.monotonic()
+                with buffer_lock:
+                    for ts, sample in zip(timestamps, samples):
+                        # sample is a list — index 0 is typically ECG channel
+                        # Adjust the index to match your OpenSignals channel layout
+                        ecg_buffer.append((now, sample[0]))
+
+                    # Evict samples older than the window we care about
+                    cutoff = now - MAX_BUFFER_SECONDS
+                    while ecg_buffer and ecg_buffer[0][0] < cutoff:
+                        ecg_buffer.popleft()
+    except Exception as e:
+        print(f"LSL worker error: {e}")
+        inlet.close_stream()
+
+
+# ---------------------------------------------------------------------------
+# BPM calculation thread — same logic, now reads from ecg_buffer
+# ---------------------------------------------------------------------------
 def bpm_worker():
     global current_bpm
+    import neurokit2 as nk
+
     while True:
-        if start_time is None:
-            time.sleep(0.2)
-            continue
-
-        elapsed = time.monotonic() - start_time
-        recent_peaks = rpeak_times[rpeak_times <= elapsed]
-        recent_peaks = recent_peaks[recent_peaks >= elapsed - WINDOW_SECONDS]
-
-        if len(recent_peaks) >= 2:
-            rr_intervals = np.diff(recent_peaks)
-            mean_rr = np.mean(rr_intervals)
-            bpm = 60.0 / mean_rr
-        else:
-            bpm = current_bpm
-
-        with lock:
-            current_bpm = round(float(bpm), 2)
-
         time.sleep(0.2)
 
+        with buffer_lock:
+            if len(ecg_buffer) < SAMPLING_RATE * 2:
+                # Not enough data yet
+                continue
+            times, values = zip(*ecg_buffer)
 
+        times = np.array(times)
+        values = np.array(values)
+
+        # Only analyse the most recent WINDOW_SECONDS of data
+        now = times[-1]
+        mask = times >= (now - WINDOW_SECONDS)
+        window_values = values[mask]
+
+        if len(window_values) < SAMPLING_RATE:
+            continue
+
+        try:
+            _, info = nk.ecg_process(window_values, sampling_rate=SAMPLING_RATE)
+            rpeaks_idx = info["ECG_R_Peaks"]
+
+            if len(rpeaks_idx) >= 2:
+                # Convert peak indices → monotonic timestamps
+                rpeak_times = times[mask][rpeaks_idx]
+                rr_intervals = np.diff(rpeak_times)
+                mean_rr = np.mean(rr_intervals)
+                bpm = round(60.0 / mean_rr, 2)
+
+                with bpm_lock:
+                    current_bpm = bpm
+
+        except Exception as e:
+            print(f"BPM calculation error: {e}")
+
+
+threading.Thread(target=lsl_worker, daemon=True).start()
 threading.Thread(target=bpm_worker, daemon=True).start()
 
 
 @app.get("/bpm")
 def get_bpm():
-    with lock:
+    with bpm_lock:
         return {"bpm": current_bpm}
 
 
