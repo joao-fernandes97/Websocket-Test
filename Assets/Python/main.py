@@ -11,12 +11,27 @@ import numpy as np
 import uvicorn
 import collections
 from fastapi import FastAPI
-from pylsl import StreamInlet, resolve_stream
+from pylsl import StreamInlet, resolve_streams
 
+DEBUG  = True
 # Close Console Window after startup
-if sys.platform == "win32":
+if not DEBUG and sys.platform == "win32":
     import ctypes
     ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+
+# ---------------------------------------------------------------------------
+# Thread-safe log queue — workers push strings, GUI drains it
+# ---------------------------------------------------------------------------
+log_queue = collections.deque(maxlen=200)
+log_lock = threading.Lock()
+
+def log(msg: str):
+    ts = time.strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)                          # still visible if console is open
+    with log_lock:
+        log_queue.append(line)
+
 
 # Get IPv4 adress
 def get_local_ip():
@@ -35,7 +50,7 @@ def get_local_ip():
 
 app = FastAPI()
 
-SAMPLING_RATE = 250
+SAMPLING_RATE = 1000
 WINDOW_SECONDS = 5
 
 MAX_BUFFER_SECONDS = WINDOW_SECONDS + 2
@@ -56,10 +71,34 @@ start_time = None          # set when server actually starts
 # LSL ingestion thread — replaces ecg_simulate + static rpeaks
 # ---------------------------------------------------------------------------
 def lsl_worker():
-    print("Looking for an available OpenSignals stream...")
-    streams = resolve_stream("name", "OpenSignals")
-    inlet = StreamInlet(streams[0])
-    print("Stream found. Ingesting samples...")
+    log("LSL worker started. Searching for OpenSignals stream...")
+    try:
+        streams = resolve_streams(wait_time=2.0)
+    except Exception as e:
+        log(f"resolve_streams() failed: {e}")
+        return
+    
+    log(f"Found {len(streams)} stream(s) on the network:")
+    for s in streams:
+        log(f"  • name='{s.name()}'  type='{s.type()}'  "
+            f"channels={s.channel_count()}  rate={s.nominal_srate()} Hz")
+
+    os_streams = [s for s in streams if s.name() == "OpenSignals"]
+
+    if not os_streams:
+        log("ERROR: No 'OpenSignals' stream found. Is OpenSignals running and streaming?")
+        return
+    
+    log(f"Connecting to '{os_streams[0].name()}' ...")
+    try:
+        inlet = StreamInlet(os_streams[0])
+    except Exception as e:
+        log(f"StreamInlet() failed: {e}")
+        return
+
+    log("Connected. Ingesting samples...")
+    sample_count = 0
+    last_report = time.monotonic()
 
     try:
         while True:
@@ -69,14 +108,25 @@ def lsl_worker():
                 now = time.monotonic()
                 with buffer_lock:
                     for ts, sample in zip(timestamps, samples):
-                        # sample is a list — index 0 is typically ECG channel
-                        # Adjust the index to match your OpenSignals channel layout
+                        # Adjust the index to match your OpenSignals channel layout probably gonna need to let this be set in GUI?
                         ecg_buffer.append((now, sample[0]))
 
-                    # Evict samples older than the window we care about
+                    # Discard samples older than the window we care about
                     cutoff = now - MAX_BUFFER_SECONDS
                     while ecg_buffer and ecg_buffer[0][0] < cutoff:
                         ecg_buffer.popleft()
+
+                    sample_count += len(timestamps)
+
+                    # Log throughput once per second so you can confirm data is flowing
+                    if now - last_report >= 1.0:
+                        with buffer_lock:
+                            buf_len = len(ecg_buffer)
+                        log(f"LSL: +{sample_count} samples  buffer={buf_len}  "
+                            f"last_val={samples[-1][0]:.4f}")
+                        sample_count = 0
+                        last_report = now
+
     except Exception as e:
         print(f"LSL worker error: {e}")
         inlet.close_stream()
@@ -93,7 +143,8 @@ def bpm_worker():
         time.sleep(0.2)
 
         with buffer_lock:
-            if len(ecg_buffer) < SAMPLING_RATE * 2:
+            buf_len = len(ecg_buffer)
+            if buf_len < SAMPLING_RATE * 2:
                 # Not enough data yet
                 continue
             times, values = zip(*ecg_buffer)
@@ -122,9 +173,15 @@ def bpm_worker():
 
                 with bpm_lock:
                     current_bpm = bpm
+                
+                log(f"BPM: {bpm}  (R-peaks={len(rpeaks_idx)}  "
+                    f"mean_RR={mean_rr*1000:.1f}ms)")
+
+            else:
+                log(f"BPM: not enough R-peaks detected ({len(rpeaks_idx)})")
 
         except Exception as e:
-            print(f"BPM calculation error: {e}")
+            log(f"BPM calculation error: {e}")
 
 
 threading.Thread(target=lsl_worker, daemon=True).start()
@@ -154,6 +211,7 @@ def run_server():
         log_level="error")
     uvicorn_server = uvicorn.Server(config)
     start_time = time.monotonic()
+    log("FastAPI server started on port 8000")
     uvicorn_server.run()          # blocks until server.should_exit is True
 
 
@@ -170,6 +228,7 @@ def stop_server():
     if uvicorn_server:
         uvicorn_server.should_exit = True
     start_time = None
+    log("Server stopped.")
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +237,7 @@ def stop_server():
 
 class App(tk.Tk):
     POLL_MS = 500          # how often the GUI refreshes BPM / status
+    LOG_POLL_MS = 300
 
     # colour palette
     BG          = "#1a1a2e"
@@ -187,6 +247,8 @@ class App(tk.Tk):
     RED         = "#e94560"
     TEXT_LIGHT  = "#eaeaea"
     TEXT_DIM    = "#888888"
+    LOG_BG      = "#0d0d1a"
+    LOG_FG      = "#7ecfa0"
 
     def __init__(self):
         super().__init__()
@@ -197,6 +259,7 @@ class App(tk.Tk):
         self._running = False
         self._build_ui()
         self._poll()
+        self._poll_log()
 
         # graceful close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -287,6 +350,39 @@ class App(tk.Tk):
         )
         self._stop_btn.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
+        # --- debug log panel (only shown when DEBUG=True) ---
+        if DEBUG:
+            log_header = tk.Frame(self, bg=self.ACCENT)
+            log_header.pack(fill="x", padx=0, pady=(4, 0))
+            tk.Label(
+                log_header, text="  Debug Log", bg=self.ACCENT,
+                fg=self.TEXT_DIM, font=("Helvetica", 8, "bold"),
+                anchor="w", pady=4
+            ).pack(fill="x")
+
+            log_frame = tk.Frame(self, bg=self.LOG_BG)
+            log_frame.pack(fill="both", expand=True, padx=0, pady=0)
+
+            scrollbar = tk.Scrollbar(log_frame)
+            scrollbar.pack(side="right", fill="y")
+
+            self._log_text = tk.Text(
+                log_frame,
+                bg=self.LOG_BG, fg=self.LOG_FG,
+                font=("Courier", 8),
+                height=12, width=72,
+                relief="flat",
+                state="disabled",
+                yscrollcommand=scrollbar.set,
+                wrap="word"
+            )
+            self._log_text.pack(side="left", fill="both", expand=True, padx=6, pady=4)
+            scrollbar.config(command=self._log_text.yview)
+
+            self._last_log_len = 0
+        else:
+            self._log_text = None
+
     # ----------------------------------------------------------- callbacks --
 
     def _on_start(self):
@@ -318,6 +414,24 @@ class App(tk.Tk):
             self._bpm_label.config(text=f"{bpm:.1f}" if bpm else "--")
 
         self.after(self.POLL_MS, self._poll)
+
+    def _poll_log(self):
+        """Drain log_queue into the Text widget."""
+        if self._log_text is not None:
+            with log_lock:
+                current_len = len(log_queue)
+                if current_len != self._last_log_len:
+                    # Grab only new lines
+                    new_lines = list(log_queue)[self._last_log_len:]
+                    self._last_log_len = current_len
+
+                    self._log_text.config(state="normal")
+                    for line in new_lines:
+                        self._log_text.insert("end", line + "\n")
+                    self._log_text.see("end")   # auto-scroll
+                    self._log_text.config(state="disabled")
+
+        self.after(self.LOG_POLL_MS, self._poll_log)
 
     # --------------------------------------------------------------- utils --
 
