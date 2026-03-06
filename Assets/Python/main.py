@@ -313,7 +313,7 @@ class App(tk.Tk):
     def _poll(self):
         """Refresh the BPM display every POLL_MS milliseconds."""
         if self._running:
-            with lock:
+            with bpm_lock:
                 bpm = current_bpm
             self._bpm_label.config(text=f"{bpm:.1f}" if bpm else "--")
 
