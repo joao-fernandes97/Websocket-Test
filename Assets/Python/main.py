@@ -125,11 +125,17 @@ def lsl_worker():
 
             if not timestamps:
                 continue
+
+            #temp logging
+            if timestamps:
+                ch0 = samples[-1][0]
+                ch1 = samples[-1][1]
+                log(f"ch0={ch0:.2f}  ch1={ch1:.2f}")
                 
             with buffer_lock:
                 for ts, sample in zip(timestamps, samples):
                     # Adjust the index to match your OpenSignals channel layout probably gonna need to let this be set in GUI?
-                    ecg_buffer.append((now, sample[0]))
+                    ecg_buffer.append((now, sample[1]))
 
                 # Discard samples older than the window we care about
                 cutoff = now - MAX_BUFFER_SECONDS
