@@ -9,12 +9,29 @@ from tkinter import font as tkfont
 import neurokit2 as nk
 import numpy as np
 import uvicorn
+import collections
 from fastapi import FastAPI
+from pylsl import StreamInlet, resolve_streams
 
+DEBUG  = True
 # Close Console Window after startup
-if sys.platform == "win32":
+if not DEBUG and sys.platform == "win32":
     import ctypes
     ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+
+# ---------------------------------------------------------------------------
+# Thread-safe log queue — workers push strings, GUI drains it
+# ---------------------------------------------------------------------------
+log_queue = collections.deque(maxlen=200)
+log_lock = threading.Lock()
+
+def log(msg: str):
+    ts = time.strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)                          # still visible if console is open
+    with log_lock:
+        log_queue.append(line)
+
 
 # Get IPv4 adress
 def get_local_ip():
@@ -33,50 +50,164 @@ def get_local_ip():
 
 app = FastAPI()
 
-SAMPLING_RATE = 250
+SAMPLING_RATE = 1000
 WINDOW_SECONDS = 5
 
-ecg_signal = nk.ecg_simulate(duration=120, sampling_rate=SAMPLING_RATE)
-signals, info = nk.ecg_process(ecg_signal, sampling_rate=SAMPLING_RATE)
+MAX_BUFFER_SECONDS = WINDOW_SECONDS + 2
+ecg_buffer = collections.deque()
+buffer_lock = threading.Lock()
 
-rpeaks = info["ECG_R_Peaks"]
-rpeak_times = rpeaks / SAMPLING_RATE
+#ecg_signal = nk.ecg_simulate(duration=120, sampling_rate=SAMPLING_RATE)
+#signals, info = nk.ecg_process(ecg_signal, sampling_rate=SAMPLING_RATE)
+
+#rpeaks = info["ECG_R_Peaks"]
+#rpeak_times = rpeaks / SAMPLING_RATE
 
 current_bpm = 0.0
-lock = threading.Lock()
+bpm_lock = threading.Lock()
 start_time = None          # set when server actually starts
 
+# ---------------------------------------------------------------------------
+# LSL ingestion thread — replaces ecg_simulate + static rpeaks
+# ---------------------------------------------------------------------------
+def lsl_worker():
+    log("LSL worker started. Searching for OpenSignals stream...")
+    try:
+        streams = resolve_streams(wait_time=2.0)
+    except Exception as e:
+        log(f"resolve_streams() failed: {e}")
+        return
+    
+    log(f"Found {len(streams)} stream(s) on the network:")
+    for s in streams:
+        log(f"  • name='{s.name()}'  type='{s.type()}'  "
+            f"channels={s.channel_count()}  rate={s.nominal_srate()} Hz")
 
+    os_streams = [s for s in streams if s.name() == "OpenSignals"]
+
+    if not os_streams:
+        log("ERROR: No 'OpenSignals' stream found. Is OpenSignals running and streaming?")
+        return
+    
+    log(f"Connecting to '{os_streams[0].name()}' ...")
+    try:
+        inlet = StreamInlet(os_streams[0])
+    except Exception as e:
+        log(f"StreamInlet() failed: {e}")
+        return
+
+    # --- diagnostic: try a single blocking pull first ---
+    log("Waiting for first sample (blocking, 5s timeout)...")
+    sample, ts = inlet.pull_sample(timeout=5.0)
+    if sample is None:
+        log("ERROR: No sample received after 5s. Stream is not sending data.")
+        return
+    log(f"First sample received: ts={ts:.3f}  values={sample}")
+    
+    log("Connected. Ingesting samples...")
+    sample_count = 0
+    last_report = time.monotonic()
+    
+    try:
+        while True:
+            # pull_chunk is more efficient than pull_sample in a tight loop
+            samples, timestamps = inlet.pull_chunk(timeout=1.0, max_samples=32)
+            
+            now = time.monotonic()
+                
+            # Report every second regardless of whether data arrived
+            if now - last_report >= 1.0:
+                with buffer_lock:
+                    buf_len = len(ecg_buffer)
+                log(f"LSL tick — chunk_size={len(timestamps)}  "
+                    f"total_samples={sample_count}  buffer={buf_len}")
+                last_report = now
+
+            if not timestamps:
+                continue
+
+            #temp logging
+            if timestamps:
+                ch0 = samples[-1][0]
+                ch1 = samples[-1][1]
+                log(f"ch0={ch0:.2f}  ch1={ch1:.2f}")
+                
+            with buffer_lock:
+                for ts, sample in zip(timestamps, samples):
+                    # Adjust the index to match your OpenSignals channel layout probably gonna need to let this be set in GUI?
+                    ecg_buffer.append((now, sample[1]))
+
+                # Discard samples older than the window we care about
+                cutoff = now - MAX_BUFFER_SECONDS
+                while ecg_buffer and ecg_buffer[0][0] < cutoff:
+                    ecg_buffer.popleft()
+
+                sample_count += len(timestamps)
+
+    except Exception as e:
+        print(f"LSL worker error: {e}")
+        inlet.close_stream()
+
+
+# ---------------------------------------------------------------------------
+# BPM calculation thread — same logic, now reads from ecg_buffer
+# ---------------------------------------------------------------------------
 def bpm_worker():
     global current_bpm
+    import neurokit2 as nk
+
     while True:
-        if start_time is None:
-            time.sleep(0.2)
-            continue
-
-        elapsed = time.monotonic() - start_time
-        recent_peaks = rpeak_times[rpeak_times <= elapsed]
-        recent_peaks = recent_peaks[recent_peaks >= elapsed - WINDOW_SECONDS]
-
-        if len(recent_peaks) >= 2:
-            rr_intervals = np.diff(recent_peaks)
-            mean_rr = np.mean(rr_intervals)
-            bpm = 60.0 / mean_rr
-        else:
-            bpm = current_bpm
-
-        with lock:
-            current_bpm = round(float(bpm), 2)
-
         time.sleep(0.2)
 
+        with buffer_lock:
+            buf_len = len(ecg_buffer)
+            if buf_len < SAMPLING_RATE * 2:
+                # Not enough data yet
+                continue
+            times, values = zip(*ecg_buffer)
 
+        times = np.array(times)
+        values = np.array(values)
+
+        # Only analyse the most recent WINDOW_SECONDS of data
+        now = times[-1]
+        mask = times >= (now - WINDOW_SECONDS)
+        window_values = values[mask]
+
+        if len(window_values) < SAMPLING_RATE:
+            continue
+
+        try:
+            _, info = nk.ecg_process(window_values, sampling_rate=SAMPLING_RATE)
+            rpeaks_idx = info["ECG_R_Peaks"]
+
+            if len(rpeaks_idx) >= 2:
+                # Convert peak indices → monotonic timestamps
+                rpeak_times = times[mask][rpeaks_idx]
+                rr_intervals = np.diff(rpeak_times)
+                mean_rr = np.mean(rr_intervals)
+                bpm = round(60.0 / mean_rr, 2)
+
+                with bpm_lock:
+                    current_bpm = bpm
+                
+                log(f"BPM: {bpm}  (R-peaks={len(rpeaks_idx)}  "
+                    f"mean_RR={mean_rr*1000:.1f}ms)")
+
+            else:
+                log(f"BPM: not enough R-peaks detected ({len(rpeaks_idx)})")
+
+        except Exception as e:
+            log(f"BPM calculation error: {e}")
+
+
+threading.Thread(target=lsl_worker, daemon=True).start()
 threading.Thread(target=bpm_worker, daemon=True).start()
 
 
 @app.get("/bpm")
 def get_bpm():
-    with lock:
+    with bpm_lock:
         return {"bpm": current_bpm}
 
 
@@ -97,6 +228,7 @@ def run_server():
         log_level="error")
     uvicorn_server = uvicorn.Server(config)
     start_time = time.monotonic()
+    log("FastAPI server started on port 8000")
     uvicorn_server.run()          # blocks until server.should_exit is True
 
 
@@ -113,6 +245,7 @@ def stop_server():
     if uvicorn_server:
         uvicorn_server.should_exit = True
     start_time = None
+    log("Server stopped.")
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +254,7 @@ def stop_server():
 
 class App(tk.Tk):
     POLL_MS = 500          # how often the GUI refreshes BPM / status
+    LOG_POLL_MS = 300
 
     # colour palette
     BG          = "#1a1a2e"
@@ -130,6 +264,8 @@ class App(tk.Tk):
     RED         = "#e94560"
     TEXT_LIGHT  = "#eaeaea"
     TEXT_DIM    = "#888888"
+    LOG_BG      = "#0d0d1a"
+    LOG_FG      = "#7ecfa0"
 
     def __init__(self):
         super().__init__()
@@ -140,6 +276,7 @@ class App(tk.Tk):
         self._running = False
         self._build_ui()
         self._poll()
+        self._poll_log()
 
         # graceful close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -230,6 +367,39 @@ class App(tk.Tk):
         )
         self._stop_btn.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
+        # --- debug log panel (only shown when DEBUG=True) ---
+        if DEBUG:
+            log_header = tk.Frame(self, bg=self.ACCENT)
+            log_header.pack(fill="x", padx=0, pady=(4, 0))
+            tk.Label(
+                log_header, text="  Debug Log", bg=self.ACCENT,
+                fg=self.TEXT_DIM, font=("Helvetica", 8, "bold"),
+                anchor="w", pady=4
+            ).pack(fill="x")
+
+            log_frame = tk.Frame(self, bg=self.LOG_BG)
+            log_frame.pack(fill="both", expand=True, padx=0, pady=0)
+
+            scrollbar = tk.Scrollbar(log_frame)
+            scrollbar.pack(side="right", fill="y")
+
+            self._log_text = tk.Text(
+                log_frame,
+                bg=self.LOG_BG, fg=self.LOG_FG,
+                font=("Courier", 8),
+                height=12, width=72,
+                relief="flat",
+                state="disabled",
+                yscrollcommand=scrollbar.set,
+                wrap="word"
+            )
+            self._log_text.pack(side="left", fill="both", expand=True, padx=6, pady=4)
+            scrollbar.config(command=self._log_text.yview)
+
+            self._last_log_len = 0
+        else:
+            self._log_text = None
+
     # ----------------------------------------------------------- callbacks --
 
     def _on_start(self):
@@ -256,11 +426,29 @@ class App(tk.Tk):
     def _poll(self):
         """Refresh the BPM display every POLL_MS milliseconds."""
         if self._running:
-            with lock:
+            with bpm_lock:
                 bpm = current_bpm
             self._bpm_label.config(text=f"{bpm:.1f}" if bpm else "--")
 
         self.after(self.POLL_MS, self._poll)
+
+    def _poll_log(self):
+        """Drain log_queue into the Text widget."""
+        if self._log_text is not None:
+            with log_lock:
+                current_len = len(log_queue)
+                if current_len != self._last_log_len:
+                    # Grab only new lines
+                    new_lines = list(log_queue)[self._last_log_len:]
+                    self._last_log_len = current_len
+
+                    self._log_text.config(state="normal")
+                    for line in new_lines:
+                        self._log_text.insert("end", line + "\n")
+                    self._log_text.see("end")   # auto-scroll
+                    self._log_text.config(state="disabled")
+
+        self.after(self.LOG_POLL_MS, self._poll_log)
 
     # --------------------------------------------------------------- utils --
 
