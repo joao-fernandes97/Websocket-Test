@@ -4,193 +4,214 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Runtime settings panel that auto-discovers every HttpDataFetcher in the scene
-/// and builds a scrollable config card for each one.
+/// Runtime settings panel.
 ///
-/// ── Scene setup ──────────────────────────────────────────────────────────────
-///  1. Create a Canvas (Screen Space – Overlay, or World Space).
-///  2. Add a child Panel as the panel root, attach this script to it.
-///  3. Assign the four prefab references in the Inspector (see below).
-///  4. Toggle the panel on/off however suits your app (key bind, button, etc.).
-///     The panel calls Refresh() each time it is enabled to pick up any new fetchers.
+/// The shared header (Host, Port, Apply-to-All button) is built entirely in the
+/// Unity Editor — just assign the existing field/button references in the Inspector.
+/// This script only populates and reacts to them.
 ///
-/// ── Prefabs required ─────────────────────────────────────────────────────────
-///  CardPrefab        – A VerticalLayoutGroup panel. Must contain child objects
-///                      with the tags/names expected in BuildCard() below.
-///  InputFieldPrefab  – TMP_InputField
-///  TogglePrefab      – Unity Toggle
-///  ButtonPrefab      – Button + TextMeshProUGUI child
+/// Per-fetcher cards are instantiated at runtime from a prefab, one per
+/// HttpDataFetcher found in the scene.
 ///
-/// All prefabs are standard Unity UI components – no custom scripts needed on them.
+/// ── Card prefab requirements ──────────────────────────────────────────────────
+///  • VerticalLayoutGroup + ContentSizeFitter (Vertical: PreferredSize) on the root.
+///  • A child TMP_Text named "Title"         → fetcher GameObject name.
+///  • A child TMP_InputField named "Endpoint"
+///  • A child TMP_InputField named "Interval"
+///  • A child Toggle named "PollToggle"
+///  • A child TMP_Text named "Status"
+///  • A child Button named "ApplyButton"
+///  • A child Button named "ResetButton"
 /// </summary>
-public class ConnectionSetupUI : MonoBehaviour
+public class ConnectionSettingsUI : MonoBehaviour
 {
-    // ── Inspector refs ────────────────────────────────────────────────────────
+    // ── Shared header — assign existing scene objects in the Inspector ─────────
 
-    [Header("Layout")]
-    [Tooltip("The ScrollRect's Content RectTransform where cards are spawned.")]
+    [Header("Shared Header (existing scene objects)")]
+    [SerializeField] private TMP_InputField _hostField;
+    [SerializeField] private TMP_InputField _portField;
+    [SerializeField] private Button         _applyAllButton;
+    [SerializeField] private TextMeshProUGUI _headerStatusLabel;
+
+    // ── Per-fetcher cards ──────────────────────────────────────────────────────
+
+    [Header("Per-connection Cards")]
+    [Tooltip("ScrollRect Content RectTransform — cards are parented here.")]
     [SerializeField] private RectTransform _scrollContent;
-
-    [Header("Prefabs")]
-    [SerializeField] private GameObject _cardPrefab;
-    [SerializeField] private TMP_InputField _inputFieldPrefab;
-    [SerializeField] private Toggle         _togglePrefab;
-    [SerializeField] private Button         _buttonPrefab;
+    [SerializeField] private GameObject    _cardPrefab;
 
     [Header("Optional")]
-    [Tooltip("A TMP label that shows how many fetchers were found.")]
     [SerializeField] private TextMeshProUGUI _summaryLabel;
 
-    // ── Private ───────────────────────────────────────────────────────────────
+    // ── Private ────────────────────────────────────────────────────────────────
 
+    private HttpDataFetcher[] _fetchers = System.Array.Empty<HttpDataFetcher>();
     private readonly List<GameObject> _spawnedCards = new List<GameObject>();
 
-    // ── Unity events ──────────────────────────────────────────────────────────
+    // ── Unity events ───────────────────────────────────────────────────────────
 
-    private void OnEnable()  => Refresh();
+    private void OnEnable() => Refresh();
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // ── Public ────────────────────────────────────────────────────────────────
 
-    /// <summary>Destroy all cards and rebuild from the current scene state.</summary>
     public void Refresh()
     {
-        ClearCards();
+        _fetchers = FindObjectsByType<HttpDataFetcher>(FindObjectsSortMode.InstanceID);
 
-        // FindObjectsByType searches inactive objects too; change the flag if you
-        // only want active ones.
-        HttpDataFetcher[] fetchers =
-            FindObjectsByType<HttpDataFetcher>(FindObjectsSortMode.InstanceID);
-
-        foreach (HttpDataFetcher fetcher in fetchers)
-            BuildCard(fetcher);
+        PopulateHeader();
+        BuildCards();
 
         if (_summaryLabel != null)
-            _summaryLabel.text = $"{fetchers.Length} connection{(fetchers.Length == 1 ? "" : "s")} found";
+            _summaryLabel.text = $"{_fetchers.Length} connection{(_fetchers.Length == 1 ? "" : "s")} found";
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // ── Header ─────────────────────────────────────────────────────────────────
 
-    private void ClearCards()
+    private void PopulateHeader()
     {
-        foreach (GameObject card in _spawnedCards)
-            Destroy(card);
+        // Restore last saved values, falling back to the first fetcher's config.
+        string defaultHost = _fetchers.Length > 0 ? _fetchers[0].Host : "127.0.0.1";
+        int    defaultPort = _fetchers.Length > 0 ? _fetchers[0].Port : 8000;
+
+        _hostField.text = PlayerPrefs.GetString("HttpFetcher.Shared.host", defaultHost);
+        _portField.text = PlayerPrefs.GetInt   ("HttpFetcher.Shared.port", defaultPort).ToString();
+
+        // Remove any previous listener before adding a fresh one (guard against
+        // multiple Refresh() calls re-registering the same lambda).
+        _applyAllButton.onClick.RemoveAllListeners();
+        _applyAllButton.onClick.AddListener(OnApplyAll);
+    }
+
+    private void OnApplyAll()
+    {
+        if (!int.TryParse(_portField.text, out int port) || port < 1 || port > 65535)
+        {
+            SetHeaderStatus("Port must be 1–65535");
+            return;
+        }
+
+        string host = _hostField.text.Trim();
+
+        PlayerPrefs.SetString("HttpFetcher.Shared.host", host);
+        PlayerPrefs.SetInt   ("HttpFetcher.Shared.port", port);
+        PlayerPrefs.Save();
+
+        foreach (HttpDataFetcher f in _fetchers)
+        {
+            f.Host = host;
+            f.Port = port;
+            f.ApplyAndRestart();
+        }
+
+        // Refresh the URL line on every card without rebuilding them.
+        RefreshCardStatusLabels();
+        SetHeaderStatus($"Applied to all — {host}:{port}");
+    }
+
+    private void SetHeaderStatus(string msg)
+    {
+        if (_headerStatusLabel != null)
+            _headerStatusLabel.text = msg;
+    }
+
+    // ── Cards ──────────────────────────────────────────────────────────────────
+
+    private void BuildCards()
+    {
+        foreach (GameObject c in _spawnedCards) Destroy(c);
         _spawnedCards.Clear();
+
+        foreach (HttpDataFetcher fetcher in _fetchers)
+            _spawnedCards.Add(BuildCard(fetcher));
     }
 
-    private void BuildCard(HttpDataFetcher fetcher)
+    private GameObject BuildCard(HttpDataFetcher fetcher)
     {
-        // ── Card root ─────────────────────────────────────────────────────────
         GameObject card = Instantiate(_cardPrefab, _scrollContent);
-        _spawnedCards.Add(card);
 
-        // Title label – looks for a child named "Title" with a TMP component.
-        TextMeshProUGUI title = card.transform.Find("Title")?.GetComponent<TextMeshProUGUI>();
-        if (title != null) title.text = fetcher.gameObject.name;
+        // Named child lookups — names must match the prefab exactly.
+        TMP_Text        title         = GetChild<TMP_Text>       (card, "Title");
+        TMP_InputField  endpointField = GetChild<TMP_InputField> (card, "Endpoint");
+        TMP_InputField  intervalField = GetChild<TMP_InputField> (card, "Interval");
+        Toggle          pollToggle    = GetChild<Toggle>         (card, "PollToggle");
+        TMP_Text        statusLabel   = GetChild<TMP_Text>       (card, "Status");
+        Button          applyBtn      = GetChild<Button>         (card, "ApplyButton");
+        Button          resetBtn      = GetChild<Button>         (card, "ResetButton");
 
-        // ── Input fields ──────────────────────────────────────────────────────
-        TMP_InputField hostField     = SpawnInputField(card, "Host",            fetcher.Host);
-        TMP_InputField portField     = SpawnInputField(card, "Port",            fetcher.Port.ToString(), TMP_InputField.ContentType.IntegerNumber);
-        TMP_InputField endpointField = SpawnInputField(card, "Endpoint",        fetcher.Endpoint);
-        TMP_InputField intervalField = SpawnInputField(card, "Interval (s)",    fetcher.UpdateInterval.ToString("F1"), TMP_InputField.ContentType.DecimalNumber);
+        // Populate
+        if (title != null)         title.text          = fetcher.gameObject.name;
+        if (endpointField != null) endpointField.text  = fetcher.Endpoint;
+        if (intervalField != null) intervalField.text  = fetcher.UpdateInterval.ToString("F1");
+        if (pollToggle != null)    pollToggle.isOn      = fetcher.PollContinuously;
+        if (statusLabel != null)   statusLabel.text     = $"URL: {fetcher.Url}";
 
-        // ── Continuous poll toggle ────────────────────────────────────────────
-        Toggle pollToggle = SpawnToggle(card, "Poll continuously", fetcher.PollContinuously);
-
-        // Disable the interval field when one-shot mode is selected.
-        pollToggle.onValueChanged.AddListener(on => intervalField.interactable = on);
-        intervalField.interactable = fetcher.PollContinuously;
-
-        // ── Status label ──────────────────────────────────────────────────────
-        TextMeshProUGUI statusLabel = SpawnLabel(card, $"URL: {fetcher.Url}");
-
-        // ── Apply button ──────────────────────────────────────────────────────
-        Button applyBtn = SpawnButton(card, "Apply & Reconnect");
-        applyBtn.onClick.AddListener(() =>
+        // Dim interval field when one-shot mode is active
+        if (pollToggle != null && intervalField != null)
         {
-            // Validate and apply
-            if (!int.TryParse(portField.text, out int port) || port < 1 || port > 65535)
-            {
-                statusLabel.text = "⚠ Port must be 1–65535";
-                return;
-            }
-            if (!float.TryParse(intervalField.text,
-                    System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out float interval) || interval < 0.1f)
-            {
-                statusLabel.text = "⚠ Interval must be ≥ 0.1 s";
-                return;
-            }
+            intervalField.interactable = pollToggle.isOn;
+            pollToggle.onValueChanged.AddListener(on => intervalField.interactable = on);
+        }
 
-            fetcher.Host             = hostField.text.Trim();
-            fetcher.Port             = port;
-            fetcher.Endpoint         = endpointField.text.Trim();
-            fetcher.UpdateInterval   = interval;
-            fetcher.PollContinuously = pollToggle.isOn;
-
-            fetcher.ApplyAndRestart();
-            statusLabel.text = $"✓ Connected → {fetcher.Url}";
-        });
-
-        // ── Reset button ──────────────────────────────────────────────────────
-        Button resetBtn = SpawnButton(card, "Reset to Saved");
-        resetBtn.onClick.AddListener(() =>
+        // Apply
+        if (applyBtn != null)
         {
-            fetcher.LoadSettings();
-            hostField.text     = fetcher.Host;
-            portField.text     = fetcher.Port.ToString();
-            endpointField.text = fetcher.Endpoint;
-            intervalField.text = fetcher.UpdateInterval.ToString("F1");
-            pollToggle.isOn    = fetcher.PollContinuously;
-            statusLabel.text   = $"URL: {fetcher.Url}";
-        });
+            applyBtn.onClick.AddListener(() =>
+            {
+                if (intervalField != null &&
+                    (!float.TryParse(intervalField.text,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float interval) || interval < 0.1f))
+                {
+                    if (statusLabel != null) statusLabel.text = "Interval must be ≥ 0.1 s";
+                    return;
+                }
+
+                if (endpointField != null) fetcher.Endpoint         = endpointField.text.Trim();
+                if (intervalField != null) fetcher.UpdateInterval   = float.Parse(intervalField.text,
+                    System.Globalization.CultureInfo.InvariantCulture);
+                if (pollToggle != null)    fetcher.PollContinuously = pollToggle.isOn;
+
+                fetcher.ApplyAndRestart();
+                if (statusLabel != null) statusLabel.text = $"{fetcher.Url}";
+            });
+        }
+
+        // Reset
+        if (resetBtn != null)
+        {
+            resetBtn.onClick.AddListener(() =>
+            {
+                fetcher.LoadSettings();
+                if (endpointField != null) endpointField.text = fetcher.Endpoint;
+                if (intervalField != null) intervalField.text = fetcher.UpdateInterval.ToString("F1");
+                if (pollToggle != null)    pollToggle.isOn     = fetcher.PollContinuously;
+                if (statusLabel != null)   statusLabel.text    = $"URL: {fetcher.Url}";
+            });
+        }
+
+        return card;
     }
 
-    // ── Widget factory helpers ────────────────────────────────────────────────
-    // Each spawns a labelled widget into the card's VerticalLayoutGroup.
-
-    private TMP_InputField SpawnInputField(
-        GameObject parent,
-        string label,
-        string value,
-        TMP_InputField.ContentType contentType = TMP_InputField.ContentType.Standard)
+    private void RefreshCardStatusLabels()
     {
-        // Label
-        SpawnLabel(parent, label);
-
-        TMP_InputField field = Instantiate(_inputFieldPrefab, parent.transform);
-        field.text        = value;
-        field.contentType = contentType;
-        return field;
+        for (int i = 0; i < _spawnedCards.Count && i < _fetchers.Length; i++)
+        {
+            TMP_Text lbl = GetChild<TMP_Text>(_spawnedCards[i], "Status");
+            if (lbl != null) lbl.text = $"{_fetchers[i].Url}";
+        }
     }
 
-    private Toggle SpawnToggle(GameObject parent, string label, bool value)
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private static T GetChild<T>(GameObject parent, string childName) where T : Component
     {
-        Toggle toggle = Instantiate(_togglePrefab, parent.transform);
-
-        // Try to set the label text on the toggle's child.
-        TextMeshProUGUI lbl = toggle.GetComponentInChildren<TextMeshProUGUI>();
-        if (lbl != null) lbl.text = label;
-
-        toggle.isOn = value;
-        return toggle;
-    }
-
-    private Button SpawnButton(GameObject parent, string label)
-    {
-        Button btn = Instantiate(_buttonPrefab, parent.transform);
-        TextMeshProUGUI lbl = btn.GetComponentInChildren<TextMeshProUGUI>();
-        if (lbl != null) lbl.text = label;
-        return btn;
-    }
-
-    private TextMeshProUGUI SpawnLabel(GameObject parent, string text)
-    {
-        GameObject go  = new GameObject($"Label_{text}", typeof(RectTransform));
-        go.transform.SetParent(parent.transform, false);
-        TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
-        tmp.text     = text;
-        tmp.fontSize = 14;
-        return tmp;
+        Transform t = parent.transform.Find(childName);
+        if (t == null)
+        {
+            Debug.LogWarning($"[ConnectionSettingsUI] Child '{childName}' not found on '{parent.name}'.");
+            return null;
+        }
+        return t.GetComponent<T>();
     }
 }
