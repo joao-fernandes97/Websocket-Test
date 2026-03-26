@@ -11,7 +11,7 @@ import numpy as np
 import uvicorn
 import collections
 from fastapi import FastAPI
-from pylsl import StreamInlet, resolve_streams
+from pylsl import StreamInlet, resolve_streams, StreamInfo, StreamOutlet
 
 DEBUG  = True
 # Close Console Window after startup
@@ -68,6 +68,14 @@ bpm_lock = threading.Lock()
 start_time = None          # set when server actually starts
 
 # ---------------------------------------------------------------------------
+# LSL output stream definition
+# ---------------------------------------------------------------------------
+
+outStreamInfo = StreamInfo('ToolMarkerStream', 'Markers', 1, 0, 'string', 'testStream')
+
+outlet = StreamOutlet(outStreamInfo)
+
+# ---------------------------------------------------------------------------
 # LSL ingestion thread — replaces ecg_simulate + static rpeaks
 # ---------------------------------------------------------------------------
 def lsl_worker():
@@ -95,6 +103,8 @@ def lsl_worker():
     except Exception as e:
         log(f"StreamInlet() failed: {e}")
         return
+    else:
+        outlet.push_sample(['Stream Started'])
 
     # --- diagnostic: try a single blocking pull first ---
     log("Waiting for first sample (blocking, 5s timeout)...")
@@ -238,6 +248,7 @@ def start_server():
         return
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
+    outlet.push_sample(['Server Start'])
 
 
 def stop_server():
@@ -246,6 +257,7 @@ def stop_server():
         uvicorn_server.should_exit = True
     start_time = None
     log("Server stopped.")
+    outlet.push_sample(['Server Stop'])
 
 
 # ---------------------------------------------------------------------------
