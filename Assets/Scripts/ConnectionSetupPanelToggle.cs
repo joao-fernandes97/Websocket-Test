@@ -3,13 +3,6 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Toggles the ConnectionSettingsUI panel open/closed.
-/// Attach this to the toggle button GameObject.
-///
-/// ── Inspector setup ───────────────────────────────────────────────────────────
-///  • _panel        → the root GameObject of your settings panel
-///  • _openIcon     → sprite shown when the panel is closed  (e.g. a cog)
-///  • _closeIcon    → sprite shown when the panel is open    (e.g. an X)
-///  • _toggleKey    → keyboard shortcut (default: Escape)
 /// </summary>
 [RequireComponent(typeof(Button))]
 public class ConnectionSettingsPanelToggle : MonoBehaviour

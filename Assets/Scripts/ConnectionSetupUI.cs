@@ -6,22 +6,20 @@ using UnityEngine.UI;
 /// <summary>
 /// Runtime settings panel.
 ///
-/// The shared header (Host, Port, Apply-to-All button) is built entirely in the
-/// Unity Editor — just assign the existing field/button references in the Inspector.
-/// This script only populates and reacts to them.
+/// Has a shared header with global settings(Host, Port, Apply-to-All button)
+/// This script populates the settings cards below.
 ///
 /// Per-fetcher cards are instantiated at runtime from a prefab, one per
 /// HttpDataFetcher found in the scene.
 ///
 /// ── Card prefab requirements ──────────────────────────────────────────────────
-///  • VerticalLayoutGroup + ContentSizeFitter (Vertical: PreferredSize) on the root.
-///  • A child TMP_Text named "Title"         → fetcher GameObject name.
-///  • A child TMP_InputField named "Endpoint"
-///  • A child TMP_InputField named "Interval"
-///  • A child Toggle named "PollToggle"
-///  • A child TMP_Text named "Status"
-///  • A child Button named "ApplyButton"
-///  • A child Button named "ResetButton"
+///  * A child TMP_Text named "Title" -- fetcher GameObject name.
+///  * A child TMP_InputField named "Endpoint"
+///  * A child TMP_InputField named "Interval"
+///  * A child Toggle named "PollToggle"
+///  * A child TMP_Text named "Status"
+///  * A child Button named "ApplyButton"
+///  * A child Button named "ResetButton"
 /// </summary>
 public class ConnectionSettingsUI : MonoBehaviour
 {

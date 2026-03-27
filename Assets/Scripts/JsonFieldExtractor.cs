@@ -4,8 +4,6 @@ using UnityEngine;
 /// <summary>
 /// Lightweight helpers for pulling individual fields out of a JSON string
 /// without needing to declare a dedicated [Serializable] class for every endpoint.
-///
-/// For anything complex, use JsonUtility or Newtonsoft.Json instead.
 /// </summary>
 public static class JsonFieldExtractor
 {

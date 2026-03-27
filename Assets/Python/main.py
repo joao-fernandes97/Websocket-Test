@@ -20,7 +20,7 @@ if not DEBUG and sys.platform == "win32":
     ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
 # ---------------------------------------------------------------------------
-# Thread-safe log queue — workers push strings, GUI drains it
+# Thread-safe log queue — workers push strings, GUI drains it, kind of
 # ---------------------------------------------------------------------------
 log_queue = collections.deque(maxlen=200)
 log_lock = threading.Lock()
@@ -76,7 +76,7 @@ outStreamInfo = StreamInfo('ToolMarkerStream', 'Markers', 1, 0, 'string', 'testS
 outlet = StreamOutlet(outStreamInfo)
 
 # ---------------------------------------------------------------------------
-# LSL ingestion thread — replaces ecg_simulate + static rpeaks
+# LSL input thread
 # ---------------------------------------------------------------------------
 def lsl_worker():
     log("LSL worker started. Searching for OpenSignals stream...")
@@ -160,7 +160,7 @@ def lsl_worker():
 
 
 # ---------------------------------------------------------------------------
-# BPM calculation thread — same logic, now reads from ecg_buffer
+# BPM calculation thread
 # ---------------------------------------------------------------------------
 def bpm_worker():
     global current_bpm
@@ -222,7 +222,7 @@ def get_bpm():
 
 
 # ---------------------------------------------------------------------------
-# Server runner  (runs uvicorn in the same process on a background thread)
+# Server runner, same process, background thread
 # ---------------------------------------------------------------------------
 
 server_thread = None
@@ -293,7 +293,7 @@ class App(tk.Tk):
         # graceful close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ------------------------------------------------------------------ UI --
+    # ----- UI -----------------------------------------------------------
 
     def _build_ui(self):
         pad = dict(padx=20, pady=10)
@@ -412,7 +412,7 @@ class App(tk.Tk):
         else:
             self._log_text = None
 
-    # ----------------------------------------------------------- callbacks --
+    # ---- callbacks ---------------------------------------------------------
 
     def _on_start(self):
         self._running = True
@@ -433,7 +433,7 @@ class App(tk.Tk):
         stop_server()
         self.destroy()
 
-    # ---------------------------------------------------------------- poll --
+    # ---- poll --------------------------------------------------------------
 
     def _poll(self):
         """Refresh the BPM display every POLL_MS milliseconds."""
@@ -462,7 +462,7 @@ class App(tk.Tk):
 
         self.after(self.LOG_POLL_MS, self._poll_log)
 
-    # --------------------------------------------------------------- utils --
+    # ----- utils ------------------------------------------------------------
 
     def _set_status(self, text, colour):
         self._dot.config(fg=colour)
