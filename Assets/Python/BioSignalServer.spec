@@ -1,22 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = []
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('uvicorn')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('fastapi')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('starlette')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('neurokit2')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# ── Third-party packages that need full collection ─────────────────────────
+for pkg in ('uvicorn', 'fastapi', 'starlette', 'neurokit2', 'pylsl'):
+    tmp = collect_all(pkg)
+    datas     += tmp[0]
+    binaries  += tmp[1]
+    hiddenimports += tmp[2]
+
+# ── Local packages with runtime / lazy imports ─────────────────────────────
+# gui.panels modules are imported inside create_panel() at runtime, so
+# PyInstaller's static analyser misses them. collect_submodules picks up
+# every panel automatically — including ones added in the future.
+hiddenimports += collect_submodules('gui.panels')
+hiddenimports += collect_submodules('processors')
+hiddenimports += collect_submodules('signals')
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    # Tell PyInstaller where the top-level packages live.
+    # '.' assumes pyinstaller runs from the project root (next to main.py).
+    pathex=['.'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -42,7 +50,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=True,          # flip to False once the log window is no longer needed
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
