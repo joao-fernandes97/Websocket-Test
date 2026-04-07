@@ -1,9 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+import pylsl
+import os
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
-binaries = []
-hiddenimports = []
+pylsl_dir = os.path.dirname(pylsl.__file__)
+
+datas = [(pylsl_dir, 'pylsl')]
+binaries = [(os.path.join(pylsl_dir, 'lib', 'lsl.dll'), 'pylsl\\lib')]
+hiddenimports = ['pylsl', 'pylsl.lib', 'pylsl.info', 'pylsl.inlet', 'pylsl.outlet', 'pylsl.resolve', 'pylsl.util']
 tmp_ret = collect_all('uvicorn')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('fastapi')

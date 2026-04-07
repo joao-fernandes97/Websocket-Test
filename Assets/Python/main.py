@@ -36,11 +36,15 @@ def log(msg: str):
 # Get IPv4 adress
 def get_local_ip():
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        ip_addresses = socket.gethostbyname_ex(socket.gethostname())[2]
+        filtered_ips = [ip for ip in ip_addresses if not ip.startswith("127.")]
+        first_ip = filtered_ips[:1]
+        return(first_ip[0])
+        #s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        #s.connect(("8.8.8.8", 80))
+        #ip = s.getsockname()[0]
+        #s.close()
+        #return ip
     except Exception:
         return "127.0.0.1"
 

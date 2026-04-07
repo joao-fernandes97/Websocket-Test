@@ -12,7 +12,7 @@ using UnityEngine.UI;
 /// Per-fetcher cards are instantiated at runtime from a prefab, one per
 /// HttpDataFetcher found in the scene.
 ///
-/// ── Card prefab requirements ──────────────────────────────────────────────────
+/// Card prefab requirements
 ///  * A child TMP_Text named "Title" -- fetcher GameObject name.
 ///  * A child TMP_InputField named "Endpoint"
 ///  * A child TMP_InputField named "Interval"
@@ -23,7 +23,7 @@ using UnityEngine.UI;
 /// </summary>
 public class ConnectionSettingsUI : MonoBehaviour
 {
-    // ── Shared header — assign existing scene objects in the Inspector ─────────
+    //Shared header — assign existing scene objects in the Inspector
 
     [Header("Shared Header (existing scene objects)")]
     [SerializeField] private TMP_InputField _hostField;
@@ -31,7 +31,7 @@ public class ConnectionSettingsUI : MonoBehaviour
     [SerializeField] private Button         _applyAllButton;
     [SerializeField] private TextMeshProUGUI _headerStatusLabel;
 
-    // ── Per-fetcher cards ──────────────────────────────────────────────────────
+    //Per-fetcher cards
 
     [Header("Per-connection Cards")]
     [Tooltip("ScrollRect Content RectTransform — cards are parented here.")]
@@ -41,19 +41,18 @@ public class ConnectionSettingsUI : MonoBehaviour
     [Header("Optional")]
     [SerializeField] private TextMeshProUGUI _summaryLabel;
 
-    // ── Private ────────────────────────────────────────────────────────────────
+    //Private
 
     private HttpDataFetcher[] _fetchers = System.Array.Empty<HttpDataFetcher>();
     private readonly List<GameObject> _spawnedCards = new List<GameObject>();
 
-    // ── Unity events ───────────────────────────────────────────────────────────
+    //Unity events
 
     private void OnEnable() => Refresh();
 
-    // ── Public ────────────────────────────────────────────────────────────────
-
     public void Refresh()
     {
+        //TODO: With the new EndpointManager we could use those references instead to populate this
         _fetchers = FindObjectsByType<HttpDataFetcher>(FindObjectsSortMode.InstanceID);
 
         PopulateHeader();
@@ -63,8 +62,7 @@ public class ConnectionSettingsUI : MonoBehaviour
             _summaryLabel.text = $"{_fetchers.Length} connection{(_fetchers.Length == 1 ? "" : "s")} found";
     }
 
-    // ── Header ─────────────────────────────────────────────────────────────────
-
+    #region Header
     private void PopulateHeader()
     {
         // Restore last saved values, falling back to the first fetcher's config.
@@ -111,9 +109,9 @@ public class ConnectionSettingsUI : MonoBehaviour
         if (_headerStatusLabel != null)
             _headerStatusLabel.text = msg;
     }
+    #endregion
 
-    // ── Cards ──────────────────────────────────────────────────────────────────
-
+    #region Cards
     private void BuildCards()
     {
         foreach (GameObject c in _spawnedCards) Destroy(c);
@@ -199,8 +197,9 @@ public class ConnectionSettingsUI : MonoBehaviour
             if (lbl != null) lbl.text = $"{_fetchers[i].Url}";
         }
     }
+    #endregion
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
+    //Helpers
 
     private static T GetChild<T>(GameObject parent, string childName) where T : Component
     {

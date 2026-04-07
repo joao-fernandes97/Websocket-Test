@@ -7,11 +7,12 @@ using UnityEngine.Networking;
 /// Generic HTTP GET poller / one-shot fetcher.
 /// Configure in the Inspector or at runtime via ConnectionSettingsUI.
 /// Settings persist between sessions via PlayerPrefs, keyed by GameObject name.
+/// 
+/// Register itself with EndpointManager in Awake() and unregisters OnDestroy()
 /// </summary>
 public class HttpDataFetcher : MonoBehaviour
 {
-    // ── Inspector configuration ───────────────────────────────────────────────
-
+    #region Configuration
     [Header("Endpoint")]
     [SerializeField] private string _host     = "127.0.0.1";
     [SerializeField] private int    _port     = 8000;
@@ -25,20 +26,17 @@ public class HttpDataFetcher : MonoBehaviour
     [Header("Behaviour")]
     [SerializeField] private bool _fetchOnStart = true;
 
-    // ── Events ────────────────────────────────────────────────────────────────
-
+    //Events
     [Header("Events")]
     public UnityEvent<string> OnSuccess = new UnityEvent<string>();
     public UnityEvent<string> OnFailure = new UnityEvent<string>();
 
-    // ── Public state ──────────────────────────────────────────────────────────
-
+    //Public state
     public string LatestJson { get; private set; } = string.Empty;
     public bool   IsFetching { get; private set; }
     public string Url        => $"http://{_host}:{_port}{_endpoint}";
 
-    // ── Exposed config (for settings UI) ─────────────────────────────────────
-
+    //Exposed config (for settings UI)
     public string Host
     {
         get => _host;
@@ -68,8 +66,9 @@ public class HttpDataFetcher : MonoBehaviour
         get => _updateInterval;
         set => _updateInterval = Mathf.Max(0.1f, value);
     }
+    #endregion
 
-    // ── PlayerPrefs persistence ───────────────────────────────────────────────
+    #region Persistence
 
     // Keys are namespaced by GameObject name so multiple fetchers don't collide.
     private string PrefKey(string field) => $"HttpFetcher.{gameObject.name}.{field}";
@@ -104,16 +103,29 @@ public class HttpDataFetcher : MonoBehaviour
         StopFetching();
         StartFetching();
     }
+    #endregion
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
-
+    #region Lifecycle
     private Coroutine _pollRoutine;
 
-    private void Awake()     => LoadSettings();
-    private void Start()     { if (_fetchOnStart) StartFetching(); }
+    private void Awake()
+    {
+        LoadSettings();
+        EndpointManager.RegisterFetcher(this);
+    } 
+
+    private void Start()
+    { 
+        if (_fetchOnStart) StartFetching(); 
+    }
+    
     private void OnDisable() => StopFetching();
 
-    // ── Public control ────────────────────────────────────────────────────────
+    private void OnDestroy()
+    {
+        EndpointManager.UnregisterFetcher(this);
+    }
+    #endregion
 
     public void StartFetching()
     {
@@ -140,8 +152,7 @@ public class HttpDataFetcher : MonoBehaviour
         _endpoint = endpoint.StartsWith("/") ? endpoint : "/" + endpoint;
     }
 
-    // ── Coroutines ────────────────────────────────────────────────────────────
-
+    #region Coroutines
     private IEnumerator PollRoutine()
     {
         while (true)
@@ -177,4 +188,5 @@ public class HttpDataFetcher : MonoBehaviour
 
         IsFetching = false;
     }
+    #endregion
 }

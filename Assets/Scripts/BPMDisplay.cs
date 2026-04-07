@@ -2,18 +2,26 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Example consumer – drop this on the same (or any) GameObject alongside
-/// HttpDataFetcher. Wire HttpDataFetcher.OnSuccess → this.OnJsonReceived
-/// in the Inspector, or call fetcher.OnSuccess.AddListener(OnJsonReceived) in code.
-///
-/// This recreates the original BPM display and shows the pattern for other fields.
+/// Displays live BPM value received from an HttpDataFetcher.
+/// IMPORTANT
+/// Any consumer classes must implement IConsumer
+/// Must register itself into EndpointManager onStart()
+/// Must unregister itself OnDestroy()
 /// </summary>
-[RequireComponent(typeof(HttpDataFetcher))]
-public class BpmDisplay : MonoBehaviour
+public class BpmDisplay : MonoBehaviour, IConsumer
 {
     [SerializeField] private TextMeshProUGUI _bpmText;
 
-    // Called by HttpDataFetcher.OnSuccess (wire up in the Inspector)
+    [Tooltip("Must match GameObject name of target HttpDataFetcher exactly.")]
+    [SerializeField] private string _fetcherName;
+
+    #region Lifecycle
+    private void Start() => EndpointManager.RegisterConsumer(this);
+    private void OnDestroy() => EndpointManager.UnregisterConsumer(this);
+    #endregion
+
+    public string FetcherName => _fetcherName;
+
     public void OnJsonReceived(string json)
     {
         if (JsonFieldExtractor.TryGetFloat(json, "bpm", out float bpm))
@@ -27,7 +35,6 @@ public class BpmDisplay : MonoBehaviour
         }
     }
 
-    // Called by HttpDataFetcher.OnFailure (wire up in the Inspector)
     public void OnFetchError(string error)
     {
         _bpmText.text = "BPM: ERROR";
