@@ -37,7 +37,10 @@ def log(msg: str):
 def get_local_ip():
     try:
         ip_addresses = socket.gethostbyname_ex(socket.gethostname())[2]
-        filtered_ips = [ip for ip in ip_addresses if not ip.startswith("127.")]
+        filtered_ips = [
+            ip for ip in ip_addresses 
+            if not ip.startswith("127.") #loopback
+            and not ip.startswith("169.254.")] #link-local
         first_ip = filtered_ips[:1]
         return(first_ip[0])
         #s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
