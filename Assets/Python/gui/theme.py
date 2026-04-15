@@ -1,6 +1,6 @@
 """
 gui/theme.py
-────────────
+__________________
 Centralised colour palette.  Import THEME in any panel:
 
     from gui.theme import THEME

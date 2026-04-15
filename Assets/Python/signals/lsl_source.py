@@ -1,10 +1,10 @@
 """
 signals/lsl_source.py
-─────────────────────
+_______________________
 Reads from a pylsl stream (default: "OpenSignals") into a ring buffer.
 
 Configurable parameters
-───────────────────────
+_______________________
 stream_name    — LSL stream name to connect to (must match OpenSignals config)
 channel_index  — 0-based index of the channel to ingest (e.g. 1 for ECG on port 2)
 sampling_rate  — expected samples/s (used by processors; does not resample)
@@ -53,7 +53,7 @@ class LSLSignalSource(BaseSignalSource):
         )
         self._outlet = StreamOutlet(_info)
 
-    # ── BaseSignalSource ───────────────────────────────────────────────────
+    # BaseSignalSource
 
     @property
     def sampling_rate(self) -> int:
@@ -79,7 +79,7 @@ class LSLSignalSource(BaseSignalSource):
     def stop(self) -> None:
         self._stop_event.set()
 
-    # ── Marker output ──────────────────────────────────────────────────────
+    # Marker output
 
     def push_marker(self, label: str) -> None:
         """Push a timestamped string marker to the LSL outlet."""
@@ -88,7 +88,7 @@ class LSLSignalSource(BaseSignalSource):
         except Exception as e:
             log(f"[LSLSignalSource] marker push failed: {e}")
 
-    # ── Background worker ──────────────────────────────────────────────────
+    # Background worker
 
     def _worker(self) -> None:
         log(f"[LSLSignalSource] Searching for '{self._stream_name}' …")
@@ -152,12 +152,6 @@ class LSLSignalSource(BaseSignalSource):
 
                 if not timestamps:
                     continue
-
-                # Temp channel value log (remove when channel layout confirmed)
-                log(
-                    f"[LSLSignalSource] ch0={samples[-1][0]:.2f}"
-                    f"  ch1={samples[-1][1]:.2f}"
-                )
 
                 with self._lock:
                     for _ts, sample in zip(timestamps, samples):

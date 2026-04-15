@@ -1,6 +1,6 @@
 """
 core/logging_utils.py
-─────────────────────
+_____________________
 Thread-safe log queue. All modules call log() to emit messages;
 the GUI LogPanel drains log_queue on its poll cycle.
 

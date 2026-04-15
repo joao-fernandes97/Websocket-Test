@@ -20,7 +20,7 @@ from fastapi import FastAPI
 
 from core.logging_utils import log
 
-# ── Singleton app ──────────────────────────────────────────────────────────
+# Singleton app
 
 _app = FastAPI()
 _uvicorn_server: uvicorn.Server | None = None
@@ -34,7 +34,7 @@ def get_app() -> FastAPI:
     return _app
 
 
-# ── Route registration ─────────────────────────────────────────────────────
+# Route registration
 
 def register_route(path: str, handler: Callable, methods: list[str] | None = None) -> None:
     """
@@ -47,7 +47,7 @@ def register_route(path: str, handler: Callable, methods: list[str] | None = Non
     log(f"[server] registered route {path}")
 
 
-# ── Lifecycle hooks ────────────────────────────────────────────────────────
+# Lifecycle hooks
 
 def on_start(callback: Callable) -> None:
     """Register a zero-argument callback to run when the server starts."""
@@ -59,7 +59,7 @@ def on_stop(callback: Callable) -> None:
     _stop_callbacks.append(callback)
 
 
-# ── Start / stop ───────────────────────────────────────────────────────────
+# Start / stop
 
 def start_server(port: int = 8000) -> None:
     global _uvicorn_server, _server_thread

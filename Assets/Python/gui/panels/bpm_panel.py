@@ -1,6 +1,6 @@
 """
 gui/panels/bpm_panel.py
-───────────────────────
+_______________________
 Large numeric BPM display driven by a BPMProcessor.
 Registered automatically when BPMProcessor.create_panel() is called.
 """
@@ -44,7 +44,7 @@ class BPMPanel(BasePanel):
             font=("Helvetica", 8),
         ).pack()
 
-    # ── BasePanel ──────────────────────────────────────────────────────────
+    # BasePanel
 
     def on_server_start(self) -> None:
         self._active = True

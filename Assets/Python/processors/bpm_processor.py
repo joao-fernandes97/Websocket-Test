@@ -42,14 +42,14 @@ class BPMProcessor(BaseProcessor):
         self._thread:     threading.Thread | None = None
         self._stop_event: threading.Event         = threading.Event()
 
-    # ── Public metric ──────────────────────────────────────────────────────
+    # Public metric
 
     @property
     def bpm(self) -> float:
         with self._lock:
             return self._bpm
 
-    # ── BaseProcessor ──────────────────────────────────────────────────────
+    # BaseProcessor
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -70,12 +70,12 @@ class BPMProcessor(BaseProcessor):
         from gui.panels.bpm_panel import BPMPanel
         return BPMPanel(parent, self)
 
-    # ── API handler ────────────────────────────────────────────────────────
+    # API handler
 
     def _api_bpm(self) -> dict:
         return {"bpm": self.bpm}
 
-    # ── Background worker ──────────────────────────────────────────────────
+    # Background worker
 
     def _worker(self) -> None:
         sr = self._source.sampling_rate

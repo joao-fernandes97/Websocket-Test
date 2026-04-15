@@ -1,24 +1,24 @@
 """
 gui/app.py
-──────────
+__________
 Main Tkinter application window.
 
 Responsibilities:
-  • Render the chrome (title bar, status row, endpoint list, Start/Stop buttons)
-  • Discover panels from processors and stack them between status and buttons
-  • Run a single poll loop that drives panel.update() for every registered panel
-  • Notify panels of server lifecycle events (start / stop)
+  * Render the chrome (title bar, status row, endpoint list, Start/Stop buttons)
+  * Discover panels from processors and stack them between status and buttons
+  * Run a single poll loop that drives panel.update() for every registered panel
+  * Notify panels of server lifecycle events (start / stop)
 
-The App knows nothing about specific biometrics — all signal-specific logic
+The App knows nothing about specific biometrics. All signal-specific logic
 lives in processors and their panels.
 
 EXTENDING THE WINDOW
-────────────────────
+____________________
 To add a new panel, add its processor in main.py.  The App will automatically:
-  • Call processor.create_panel(self) and insert the result
-  • Include the processor's routes in the endpoint label
-  • Drive panel.update() on every poll tick
-  • Call panel.on_server_start/stop() on lifecycle changes
+  * Call processor.create_panel(self) and insert the result
+  * Include the processor's routes in the endpoint label
+  * Drive panel.update() on every poll tick
+  * Call panel.on_server_start/stop() on lifecycle changes
 """
 
 import tkinter as tk
@@ -54,7 +54,7 @@ class App(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ── UI construction ────────────────────────────────────────────────────
+    # UI construction
 
     def _build_ui(self) -> None:
         t = THEME
@@ -93,7 +93,7 @@ class App(tk.Tk):
         )
         self._status_label.pack(side="left")
 
-        # ── Processor panels (dynamically inserted) ────────────────────────
+        # Processor panels (dynamically inserted)
         for proc in self._processors:
             panel = proc.create_panel(self)
             if panel is not None:
@@ -152,7 +152,7 @@ class App(tk.Tk):
             log_panel.pack(fill="both", expand=True)
             self._panels.append(log_panel)
 
-    # ── Button callbacks ───────────────────────────────────────────────────
+    # Button callbacks
 
     def _on_start(self) -> None:
         self._running = True
@@ -176,7 +176,7 @@ class App(tk.Tk):
         server.stop_server()
         self.destroy()
 
-    # ── Poll loop ──────────────────────────────────────────────────────────
+    # Poll loop
 
     def _schedule_poll(self) -> None:
         self.after(self.POLL_MS, self._poll)
@@ -189,7 +189,7 @@ class App(tk.Tk):
                 pass
         self.after(self.POLL_MS, self._poll)
 
-    # ── Helpers ────────────────────────────────────────────────────────────
+    # Helpers
 
     def _set_status(self, text: str, colour: str) -> None:
         self._dot.config(fg=colour)

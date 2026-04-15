@@ -1,6 +1,6 @@
 """
 gui/panels/log_panel.py
-───────────────────────
+_______________________
 Scrollable debug log panel.
 Not tied to any specific processor — drains the shared log_queue.
 Instantiated directly by App when debug=True.
@@ -52,7 +52,7 @@ class LogPanel(BasePanel):
         self._text.pack(side="left", fill="both", expand=True, padx=6, pady=4)
         scrollbar.config(command=self._text.yview)
 
-    # ── BasePanel ──────────────────────────────────────────────────────────
+    # BasePanel
 
     def update(self) -> None:
         with log_lock:
