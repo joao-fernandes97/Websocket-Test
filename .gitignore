@@ -100,7 +100,3 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
-
-#Python build files
-/[Aa]ssets/Python/dist/
-/[Aa]ssets/Python/build/

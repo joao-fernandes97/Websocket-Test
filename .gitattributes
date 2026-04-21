@@ -1,0 +1,3 @@
+#Always keep our version of build files
+/[Aa]ssets/Python/dist/**       merge=ours
+/[Aa]ssets/Python/build/**      merge=ours
