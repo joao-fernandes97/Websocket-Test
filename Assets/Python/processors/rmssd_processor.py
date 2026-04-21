@@ -106,10 +106,11 @@ class RMSSDProcessor(BaseProcessor):
                 rpeaks_idx = info["RSP_Peaks"]
 
                 if len(rpeaks_idx) >= 2:
-                    rmssd = nk.rsp_rrv(rsp)["RRV_RMSSD"].iloc(0)
+                    rrv = nk.rsp_rrv(rsp, sampling_rate=sr)
+                    rmssd = rrv["RRV_RMSSD"].iloc[0]
 
                     with self._lock:
-                        self.rmssd = rmssd
+                        self._rmssd = rmssd
 
                     log(
                         f"[RMSSDProcessor] RMSSD={rmssd}"
