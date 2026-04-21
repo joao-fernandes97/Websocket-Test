@@ -6,7 +6,7 @@ Reads from a pylsl stream (default: "OpenSignals") into a ring buffer.
 Configurable parameters
 _______________________
 stream_name    — LSL stream name to connect to (must match OpenSignals config)
-channel_index  — 0-based index of the channel to ingest (e.g. 1 for ECG on port 2)
+channel_index  — index of the channel to ingest (e.g. 1 for ECG on port 1)
 sampling_rate  — expected samples/s (used by processors; does not resample)
 window_seconds — ring buffer depth in seconds (+ 2 s headroom)
 

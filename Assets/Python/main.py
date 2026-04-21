@@ -25,11 +25,12 @@ from processors.rmssd_processor import RMSSDProcessor
 from gui.app import App
 
 # Signal sources
-# Swap or add sources here (e.g. a file replay source, a simulated source…)
+# Swap or add sources here
+# index 0 in Plux is a timestamp channel
 
 ecg_source = LSLSignalSource(
     stream_name   = "OpenSignals",
-    channel_index = 1,        # 0-based; adjust to match your device layout
+    channel_index = 1,        # 0-based; adjust to match device layout
     sampling_rate = 1000,
     window_seconds= 5,
 )
@@ -37,7 +38,7 @@ ecg_source.start()
 
 rsp_source = LSLSignalSource(
     stream_name   = "OpenSignals",
-    channel_index = 2,        # 0-based; adjust to match your device layout
+    channel_index = 2,        # 0-based; adjust to match device layout
     sampling_rate = 1000,
     window_seconds= 5,
 )
@@ -62,8 +63,6 @@ for proc in processors:
 # LSL lifecycle markers - push to recording whenever the server toggles
 server.on_start(lambda: ecg_source.push_marker("Server Start"))
 server.on_stop( lambda: ecg_source.push_marker("Server Stop"))
-
-# GUI
 
 if __name__ == "__main__":
     App(processors=processors, debug=DEBUG, port=PORT).mainloop()
