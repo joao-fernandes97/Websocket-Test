@@ -21,6 +21,7 @@ using UnityEngine.UI;
 ///  * A child Button named "ApplyButton"
 ///  * A child Button named "ResetButton"
 /// </summary>
+/// TODO: Investigate why fetching isn't reseting and retrying when updating settings
 public class ConnectionSettingsUI : MonoBehaviour
 {
     //Shared header — assign existing scene objects in the Inspector

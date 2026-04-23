@@ -100,7 +100,6 @@ class RMSSDProcessor(BaseProcessor):
             if len(window_values) < sr:
                 continue
 
-            #TODO: This isn't working
             try:
                 rsp, info = nk.rsp_process(window_values, sampling_rate=sr)
                 rpeaks_idx = info["RSP_Peaks"]

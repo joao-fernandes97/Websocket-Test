@@ -25,6 +25,7 @@ public static class EndpointManager
     /// HttpDataFetcher must call this in Awake()
     /// </summary>
     /// <param name="fetcher"></param>
+    /// TODO: HttpDataFetcher should also instead be an interface
     public static void RegisterFetcher(HttpDataFetcher fetcher)
     {
         string name = fetcher.gameObject.name;

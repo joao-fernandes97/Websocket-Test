@@ -180,7 +180,7 @@ public class HttpDataFetcher : MonoBehaviour
             }
             else
             {
-                string err = $"[HttpDataFetcher] {req.responseCode} – {req.error} ({Url})";
+                string err = $"[HttpDataFetcher] {req.responseCode} - {req.error} ({Url})";
                 Debug.LogWarning(err);
                 OnFailure.Invoke(err);
             }

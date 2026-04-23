@@ -65,4 +65,5 @@ server.on_start(lambda: ecg_source.push_marker("Server Start"))
 server.on_stop( lambda: ecg_source.push_marker("Server Stop"))
 
 if __name__ == "__main__":
+    #TODO: Move start() calls to this main loop
     App(processors=processors, debug=DEBUG, port=PORT).mainloop()
