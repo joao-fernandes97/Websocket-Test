@@ -8,9 +8,10 @@ using UnityEngine.Networking;
 /// Configure in the Inspector or at runtime via ConnectionSettingsUI.
 /// Settings persist between sessions via PlayerPrefs, keyed by GameObject name.
 /// 
-/// Register itself with EndpointManager in Awake() and unregisters OnDestroy()
+/// Implements IFetcher and registers itself with EndpointManager in Awake() and
+/// unregisters OnDestroy()
 /// </summary>
-public class HttpDataFetcher : MonoBehaviour
+public class HttpDataFetcher : MonoBehaviour, IFetcher
 {
     #region Configuration
     [Header("Endpoint")]
@@ -66,6 +67,17 @@ public class HttpDataFetcher : MonoBehaviour
         get => _updateInterval;
         set => _updateInterval = Mathf.Max(0.1f, value);
     }
+    #endregion
+
+    #region IFetcher
+    /// <summary>Registry key — must match this GameObject's name exactly.</summary>
+    public string FetcherName => gameObject.name;
+
+    public void AddSuccessListener(UnityAction<string> callback)    => OnSuccess.AddListener(callback);
+    public void RemoveSuccessListener(UnityAction<string> callback) => OnSuccess.RemoveListener(callback);
+
+    public void AddFailureListener(UnityAction<string> callback)    => OnFailure.AddListener(callback);
+    public void RemoveFailureListener(UnityAction<string> callback) => OnFailure.RemoveListener(callback);
     #endregion
 
     #region Persistence
@@ -139,6 +151,7 @@ public class HttpDataFetcher : MonoBehaviour
         if (_pollRoutine == null) return;
         StopCoroutine(_pollRoutine);
         _pollRoutine = null;
+        IsFetching = false;
     }
 
     /// <summary>Trigger a single fetch right now, ignoring the polling schedule.</summary>
