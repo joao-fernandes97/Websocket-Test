@@ -34,7 +34,6 @@ ecg_source = LSLSignalSource(
     sampling_rate = 1000,
     window_seconds= 5,
 )
-ecg_source.start()
 
 rsp_source = LSLSignalSource(
     stream_name   = "OpenSignals",
@@ -42,8 +41,6 @@ rsp_source = LSLSignalSource(
     sampling_rate = 1000,
     window_seconds= 5,
 )
-rsp_source.start()
-
 # Processors
 # Each processor contributes:
 #   * One or more HTTP routes  (via get_routes())
@@ -58,12 +55,15 @@ processors = [
 for proc in processors:
     for path, handler in proc.get_routes():
         server.register_route(path, handler)
-    proc.start()
 
 # LSL lifecycle markers - push to recording whenever the server toggles
 server.on_start(lambda: ecg_source.push_marker("Server Start"))
 server.on_stop( lambda: ecg_source.push_marker("Server Stop"))
 
 if __name__ == "__main__":
-    #TODO: Move start() calls to this main loop
+    for source in [ecg_source, rsp_source]:
+        source.start()
+    for proc in processors:
+        proc.start()
+
     App(processors=processors, debug=DEBUG, port=PORT).mainloop()

@@ -3,8 +3,8 @@ using UnityEngine;
 
 public static class EndpointManager
 {
-    private static readonly Dictionary<string, HttpDataFetcher> _fetchers
-        = new Dictionary<string, HttpDataFetcher>();
+    private static readonly Dictionary<string, IFetcher> _fetchers
+        = new Dictionary<string, IFetcher>();
     private static readonly Dictionary<string, List<IConsumer>> _consumers
         = new Dictionary<string, List<IConsumer>>();
 
@@ -22,13 +22,12 @@ public static class EndpointManager
 
     /// <summary>
     /// Registers a fetcher so consumers can 'subscribe' to it
-    /// HttpDataFetcher must call this in Awake()
+    /// IFetcher implementors must call this in Awake()
     /// </summary>
     /// <param name="fetcher"></param>
-    /// TODO: HttpDataFetcher should also instead be an interface
-    public static void RegisterFetcher(HttpDataFetcher fetcher)
+    public static void RegisterFetcher(IFetcher fetcher)
     {
-        string name = fetcher.gameObject.name;
+        string name = fetcher.FetcherName;
 
         if(_fetchers.ContainsKey(name))
         {
@@ -55,9 +54,9 @@ public static class EndpointManager
     /// error so they can update their UI rather than silently going stale.
     /// HttpDataFetcher must call this in OnDestroy().
     /// </summary>
-    public static void UnregisterFetcher(HttpDataFetcher fetcher)
+    public static void UnregisterFetcher(IFetcher fetcher)
     {
-        string name = fetcher.gameObject.name;
+        string name = fetcher.FetcherName;
  
         if (!_fetchers.Remove(name))
             return; // was never registered — nothing to do
@@ -81,7 +80,7 @@ public static class EndpointManager
 
     /// <summary>
     /// Registers a consumer and, if the target fetcher is already present,
-    /// immediately wires the UnityEvent callbacks.
+    /// immediately wires the callbacks.
     /// IConsumer implementors must call this in Start().
     /// </summary>
     public static void RegisterConsumer(IConsumer consumer)
@@ -103,7 +102,7 @@ public static class EndpointManager
                   $"registered to '{name}'.");
  
         // Wire immediately if the fetcher is already in the registry.
-        if (_fetchers.TryGetValue(name, out HttpDataFetcher fetcher))
+        if (_fetchers.TryGetValue(name, out IFetcher fetcher))
         {
             WireConsumersToFetcher(fetcher, new List<IConsumer> { consumer });
         }
@@ -124,7 +123,7 @@ public static class EndpointManager
         string name = consumer.FetcherName;
  
         // Unwire from fetcher events.
-        if (_fetchers.TryGetValue(name, out HttpDataFetcher fetcher))
+        if (_fetchers.TryGetValue(name, out IFetcher fetcher))
             UnwireConsumerFromFetcher(fetcher, consumer);
  
         // Remove from the consumer list.
@@ -139,20 +138,20 @@ public static class EndpointManager
                   $"unregistered from '{name}'.");
     }
 
-    private static void WireConsumersToFetcher(HttpDataFetcher fetcher,
+    private static void WireConsumersToFetcher(IFetcher fetcher,
                                                 List<IConsumer> consumers)
     {
         foreach (IConsumer c in consumers)
         {
-            fetcher.OnSuccess.AddListener(c.OnJsonReceived);
-            fetcher.OnFailure.AddListener(c.OnFetchError);
+            fetcher.AddSuccessListener(c.OnJsonReceived);
+            fetcher.AddFailureListener(c.OnFetchError);
         }
     }
  
-    private static void UnwireConsumerFromFetcher(HttpDataFetcher fetcher,
+    private static void UnwireConsumerFromFetcher(IFetcher fetcher,
                                                    IConsumer consumer)
     {
-        fetcher.OnSuccess.RemoveListener(consumer.OnJsonReceived);
-        fetcher.OnFailure.RemoveListener(consumer.OnFetchError);
+        fetcher.RemoveSuccessListener(consumer.OnJsonReceived);
+        fetcher.RemoveFailureListener(consumer.OnFetchError);
     }
 }

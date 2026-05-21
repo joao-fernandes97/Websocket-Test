@@ -154,19 +154,19 @@ public class ConnectionSettingsUI : MonoBehaviour
         {
             applyBtn.onClick.AddListener(() =>
             {
+                float interval = fetcher.UpdateInterval;
                 if (intervalField != null &&
                     (!float.TryParse(intervalField.text,
                         System.Globalization.NumberStyles.Float,
                         System.Globalization.CultureInfo.InvariantCulture,
-                        out float interval) || interval < 0.1f))
+                        out interval) || interval < 0.1f))
                 {
                     if (statusLabel != null) statusLabel.text = "Interval must be ≥ 0.1 s";
                     return;
                 }
 
                 if (endpointField != null) fetcher.Endpoint         = endpointField.text.Trim();
-                if (intervalField != null) fetcher.UpdateInterval   = float.Parse(intervalField.text,
-                    System.Globalization.CultureInfo.InvariantCulture);
+                if (intervalField != null) fetcher.UpdateInterval   = interval;
                 if (pollToggle != null)    fetcher.PollContinuously = pollToggle.isOn;
 
                 fetcher.ApplyAndRestart();
